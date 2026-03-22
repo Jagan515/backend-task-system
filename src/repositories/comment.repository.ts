@@ -8,9 +8,7 @@ export class CommentRepository extends DefaultCrudRepository<
   typeof Comment.prototype.id,
   CommentRelations
 > {
-  constructor(
-    @inject('datasources.db') dataSource: DbDataSource,
-  ) {
+  constructor(@inject('datasources.db') dataSource: DbDataSource) {
     super(Comment, dataSource);
   }
 }

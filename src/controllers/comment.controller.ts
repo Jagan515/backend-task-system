@@ -1,20 +1,8 @@
-import {
-  authenticate,
-} from '@loopback/authentication';
-import {
-  authorize,
-} from '@loopback/authorization';
+import {authenticate} from '@loopback/authentication';
+import {authorize} from '@loopback/authorization';
 import {inject} from '@loopback/core';
-import {
-  repository,
-} from '@loopback/repository';
-import {
-  post,
-  param,
-  get,
-  requestBody,
-  response,
-} from '@loopback/rest';
+import {repository} from '@loopback/repository';
+import {post, param, get, requestBody, response} from '@loopback/rest';
 import {Comment} from '../models';
 import {CommentRepository} from '../repositories';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';

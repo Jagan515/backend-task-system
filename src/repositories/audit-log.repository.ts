@@ -8,9 +8,7 @@ export class AuditLogRepository extends DefaultCrudRepository<
   typeof AuditLog.prototype.id,
   AuditLogRelations
 > {
-  constructor(
-    @inject('datasources.db') dataSource: DbDataSource,
-  ) {
+  constructor(@inject('datasources.db') dataSource: DbDataSource) {
     super(AuditLog, dataSource);
   }
 }

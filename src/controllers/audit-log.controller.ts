@@ -1,18 +1,7 @@
-import {
-  authenticate,
-} from '@loopback/authentication';
-import {
-  authorize,
-} from '@loopback/authorization';
-import {
-  repository,
-  Filter,
-} from '@loopback/repository';
-import {
-  param,
-  get,
-  response,
-} from '@loopback/rest';
+import {authenticate} from '@loopback/authentication';
+import {authorize} from '@loopback/authorization';
+import {repository, Filter} from '@loopback/repository';
+import {param, get, response} from '@loopback/rest';
 import {AuditLog} from '../models';
 import {AuditLogRepository} from '../repositories';
 import {PERMISSIONS} from '../config/permissions';
@@ -49,16 +38,11 @@ export class AuditLogController {
       },
     },
   })
-  async findByTaskId(
-    @param.path.number('id') id: number,
-  ): Promise<AuditLog[]> {
+  async findByTaskId(@param.path.number('id') id: number): Promise<AuditLog[]> {
     return this.auditLogRepository.find({
       where: {
-        and: [
-          {entityType: 'Task'},
-          {entityId: id}
-        ]
-      }
+        and: [{entityType: 'Task'}, {entityId: id}],
+      },
     });
   }
 }

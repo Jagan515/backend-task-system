@@ -1,19 +1,7 @@
-import {
-  authenticate,
-} from '@loopback/authentication';
+import {authenticate} from '@loopback/authentication';
 import {inject} from '@loopback/core';
-import {
-  repository,
-  Filter,
-} from '@loopback/repository';
-import {
-  post,
-  param,
-  get,
-  del,
-  requestBody,
-  response,
-} from '@loopback/rest';
+import {repository} from '@loopback/repository';
+import {post, param, get, del, requestBody, response} from '@loopback/rest';
 import {FilterPreset} from '../models';
 import {FilterPresetRepository} from '../repositories';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';

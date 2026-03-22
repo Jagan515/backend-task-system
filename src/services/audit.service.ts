@@ -20,7 +20,8 @@ export class AuditService {
       entityType,
       entityId,
       action,
-      performedBy: typeof performedBy === 'string' ? parseInt(performedBy) : performedBy,
+      performedBy:
+        typeof performedBy === 'string' ? parseInt(performedBy) : performedBy,
       details,
     });
   }

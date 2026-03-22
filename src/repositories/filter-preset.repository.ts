@@ -8,9 +8,7 @@ export class FilterPresetRepository extends DefaultCrudRepository<
   typeof FilterPreset.prototype.id,
   FilterPresetRelations
 > {
-  constructor(
-    @inject('datasources.db') dataSource: DbDataSource,
-  ) {
+  constructor(@inject('datasources.db') dataSource: DbDataSource) {
     super(FilterPreset, dataSource);
   }
 }

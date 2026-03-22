@@ -10,10 +10,14 @@ export const PERMISSIONS = {
   UPDATE_TASK: [UserRole.CONTRIBUTOR, UserRole.POWER_USER],
   DELETE_TASK: [UserRole.POWER_USER],
   VIEW_TASKS: [UserRole.CONSUMER, UserRole.CONTRIBUTOR, UserRole.POWER_USER],
-  
+
   // Audit Permissions
   VIEW_AUDIT_LOGS: [UserRole.POWER_USER],
-  
+
   // Comment Permissions
-  CREATE_COMMENT: [UserRole.CONSUMER, UserRole.CONTRIBUTOR, UserRole.POWER_USER],
+  CREATE_COMMENT: [
+    UserRole.CONSUMER,
+    UserRole.CONTRIBUTOR,
+    UserRole.POWER_USER,
+  ],
 };

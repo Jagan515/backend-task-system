@@ -76,10 +76,8 @@ export class BackendApplication extends BootMixin(
     this.bind('services.AuditService').toClass(AuditService);
     this.bind('services.ReminderService').toClass(ReminderService);
 
-    
     // Bind custom JWT service to override default
     this.bind(TokenServiceBindings.TOKEN_SERVICE).toClass(MyJWTService);
-
 
     // Bind datasource
     this.dataSource(DbDataSource, UserServiceBindings.DATASOURCE_NAME);
@@ -89,7 +87,8 @@ export class BackendApplication extends BootMixin(
       process.env.JWT_SECRET ?? TokenServiceConstants.TOKEN_SECRET_VALUE,
     );
     this.bind(TokenServiceBindings.TOKEN_EXPIRES_IN).to(
-      process.env.JWT_EXPIRES_IN ?? TokenServiceConstants.TOKEN_EXPIRES_IN_VALUE,
+      process.env.JWT_EXPIRES_IN ??
+        TokenServiceConstants.TOKEN_EXPIRES_IN_VALUE,
     );
   }
 }

@@ -8,9 +8,7 @@ export class TaskAssignmentRepository extends DefaultCrudRepository<
   typeof TaskAssignment.prototype.id,
   TaskAssignmentRelations
 > {
-  constructor(
-    @inject('datasources.db') dataSource: DbDataSource,
-  ) {
+  constructor(@inject('datasources.db') dataSource: DbDataSource) {
     super(TaskAssignment, dataSource);
   }
 }

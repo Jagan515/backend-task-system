@@ -17,15 +17,15 @@ const config = {
   database: process.env.DB_NAME,
 };
 
-
-
 // Observe application lifecycle to disconnect from the datasource when
 // the application is stopped. This allows the application to shut down
 // gracefully. The `stop()` method is inherited from `juggler.DataSource`.
 // Learn more at https://loopback.io/doc/en/lb4/Life-cycle.html
 @lifeCycleObserver('datasource')
-export class DbDataSource extends juggler.DataSource
-  implements LifeCycleObserver {
+export class DbDataSource
+  extends juggler.DataSource
+  implements LifeCycleObserver
+{
   static dataSourceName = 'db';
   static readonly defaultConfigs = config;
 

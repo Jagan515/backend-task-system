@@ -40,4 +40,5 @@ export interface TaskAssignmentRelations {
   // describe navigational properties here
 }
 
-export type TaskAssignmentWithRelations = TaskAssignment & TaskAssignmentRelations;
+export type TaskAssignmentWithRelations = TaskAssignment &
+  TaskAssignmentRelations;

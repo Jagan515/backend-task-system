@@ -1,9 +1,18 @@
-import {injectable, BindingScope, lifeCycleObserver, LifeCycleObserver} from '@loopback/core';
+import {
+  injectable,
+  BindingScope,
+  lifeCycleObserver,
+  LifeCycleObserver,
+} from '@loopback/core';
 import Queue from 'bull';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import {repository} from '@loopback/repository';
-import {TaskRepository, UserRepository} from '../repositories';
+import {
+  TaskRepository,
+  UserRepository,
+  TaskAssignmentRepository,
+} from '../repositories';
 import * as nodemailer from 'nodemailer';
 
 dotenv.config({path: path.join(__dirname, '../../.env')});
@@ -19,6 +28,8 @@ export class ReminderService implements LifeCycleObserver {
     public taskRepository: TaskRepository,
     @repository(UserRepository)
     public userRepository: UserRepository,
+    @repository(TaskAssignmentRepository)
+    public taskAssignmentRepository: TaskAssignmentRepository,
   ) {
     this.reminderQueue = new Queue('task-reminders', {
       redis: {
@@ -35,10 +46,16 @@ export class ReminderService implements LifeCycleObserver {
         pass: process.env.EMAIL_PASS,
       },
     });
+  }
 
-    this.reminderQueue.process(async (job) => {
-      await this.processReminder(job);
-    });
+  async start() {
+    this.reminderQueue
+      .process(async job => {
+        await this.processReminder(job);
+      })
+      .catch(err => {
+        console.error('Redis Queue process error', err);
+      });
   }
 
   async scheduleReminder(taskId: number, dueDate: Date) {
@@ -65,18 +82,21 @@ export class ReminderService implements LifeCycleObserver {
 
   private async processReminder(job: Queue.Job) {
     const {taskId} = job.data;
-    const task = await this.taskRepository.findById(taskId, {
-      include: [{relation: 'assignees' as any}],
-    });
+    const task = await this.taskRepository.findById(taskId);
 
     if (!task || task.status === 'COMPLETED') {
       return;
     }
 
-    // Get assignees (This requires a relation which I haven't fully defined yet in LB4 style, but let's assume it for now)
-    // Actually I should fetch from TaskAssignmentRepository
+    const assignments = await this.taskAssignmentRepository.find({
+      where: {taskId},
+    });
+    const assigneeIds = assignments.map(a => a.userId);
+
     // ... logic to send email to all assignees
-    console.log(`Sending reminder for task: ${task.title}`);
+    console.log(
+      `Sending reminder for task: ${task.title} to users: ${assigneeIds.join(', ')}`,
+    );
   }
 
   async stop() {

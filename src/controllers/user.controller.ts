@@ -1,8 +1,5 @@
 import {inject} from '@loopback/core';
-import {
-  repository,
-  Filter,
-} from '@loopback/repository';
+import {repository, Filter} from '@loopback/repository';
 import {
   post,
   get,
@@ -11,12 +8,11 @@ import {
   response,
   HttpErrors,
 } from '@loopback/rest';
-import {
-  TokenServiceBindings,
-} from '@loopback/authentication-jwt';
+import {TokenServiceBindings} from '@loopback/authentication-jwt';
 import {authenticate} from '@loopback/authentication';
 import {TokenService} from '@loopback/authentication';
-import {User, UserRole} from '../models';
+import {User} from '../models';
+import {UserRole} from '../config/permissions';
 import {UserRepository} from '../repositories';
 import * as bcrypt from 'bcryptjs';
 import {securityId, UserProfile} from '@loopback/security';
@@ -39,12 +35,11 @@ export class UserController {
       },
     },
   })
-  async find(
-    @param.filter(User) filter?: Filter<User>,
-  ): Promise<User[]> {
+  async find(@param.filter(User) filter?: Filter<User>): Promise<User[]> {
     const users = await this.userRepository.find(filter);
     return users.map(u => {
-      const {password, ...userWithoutPassword} = u;
+      const userWithoutPassword = u;
+      delete (userWithoutPassword as Partial<User>).password;
       return userWithoutPassword as User;
     });
   }
@@ -83,7 +78,9 @@ export class UserController {
     }
 
     if (!userData.password || userData.password.length < 6) {
-      throw new HttpErrors.BadRequest('Password must be at least 6 characters.');
+      throw new HttpErrors.BadRequest(
+        'Password must be at least 6 characters.',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -91,8 +88,8 @@ export class UserController {
       ...userData,
       password: hashedPassword,
     });
-    
-    // @ts-expect-error
+
+    // @ts-expect-error: password is removed before returning user
     delete user.password;
     return user;
   }
@@ -151,7 +148,8 @@ export class UserController {
 
     const userProfile: UserProfile = {
       [securityId]: user.id!.toString(),
-      name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email,
+      name:
+        `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email,
       email: user.email,
       role: user.role,
     };
