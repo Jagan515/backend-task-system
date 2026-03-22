@@ -1,6 +1,9 @@
 import {
   authenticate,
 } from '@loopback/authentication';
+import {
+  authorize,
+} from '@loopback/authorization';
 import {inject} from '@loopback/core';
 import {
   repository,
@@ -14,12 +17,12 @@ import {
   del,
   requestBody,
   response,
-  HttpErrors,
 } from '@loopback/rest';
-import {Task, TaskAssignment, TaskStatus} from '../models';
+import {Task} from '../models';
 import {TaskRepository, TaskAssignmentRepository} from '../repositories';
 import {AuditService, ReminderService} from '../services';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';
+import {PERMISSIONS} from '../config/permissions';
 
 @authenticate('jwt')
 export class TaskController {
@@ -36,6 +39,7 @@ export class TaskController {
     public user: UserProfile,
   ) {}
 
+  @authorize({allowedRoles: PERMISSIONS.CREATE_TASK})
   @post('/tasks')
   @response(200, {
     description: 'Task model instance',
@@ -114,6 +118,7 @@ export class TaskController {
     return this.taskRepository.findById(id);
   }
 
+  @authorize({allowedRoles: PERMISSIONS.UPDATE_TASK})
   @put('/tasks/{id}')
   @response(204, {description: 'Task PUT success'})
   async replaceById(
@@ -125,6 +130,7 @@ export class TaskController {
     await this.auditService.log('Task', id, 'UPDATE', parseInt(userId), task);
   }
 
+  @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
   @del('/tasks/{id}')
   @response(204, {description: 'Task DELETE success'})
   async deleteById(

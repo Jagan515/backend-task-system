@@ -1,10 +1,12 @@
 import {
   authenticate,
 } from '@loopback/authentication';
+import {
+  authorize,
+} from '@loopback/authorization';
 import {inject} from '@loopback/core';
 import {
   repository,
-  Filter,
 } from '@loopback/repository';
 import {
   post,
@@ -17,6 +19,7 @@ import {Comment} from '../models';
 import {CommentRepository} from '../repositories';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';
 import {AuditService} from '../services';
+import {PERMISSIONS} from '../config/permissions';
 
 @authenticate('jwt')
 export class CommentController {
@@ -29,6 +32,7 @@ export class CommentController {
     public user: UserProfile,
   ) {}
 
+  @authorize({allowedRoles: PERMISSIONS.CREATE_COMMENT})
   @post('/tasks/{id}/comments')
   @response(200, {
     description: 'Comment model instance',

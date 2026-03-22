@@ -2,6 +2,9 @@ import {
   authenticate,
 } from '@loopback/authentication';
 import {
+  authorize,
+} from '@loopback/authorization';
+import {
   repository,
   Filter,
 } from '@loopback/repository';
@@ -12,8 +15,10 @@ import {
 } from '@loopback/rest';
 import {AuditLog} from '../models';
 import {AuditLogRepository} from '../repositories';
+import {PERMISSIONS} from '../config/permissions';
 
 @authenticate('jwt')
+@authorize({allowedRoles: PERMISSIONS.VIEW_AUDIT_LOGS})
 export class AuditLogController {
   constructor(
     @repository(AuditLogRepository)
