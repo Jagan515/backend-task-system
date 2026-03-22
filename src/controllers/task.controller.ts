@@ -380,7 +380,18 @@ export class TaskController {
     },
   ): Promise<{count: number}> {
     const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
     const {ids} = bulkData;
+
+    // Role-based Ownership Check
+    if (userRole === UserRole.CONTRIBUTOR) {
+      const tasks = await this.taskRepository.find({where: {id: {inq: ids}}});
+      if (tasks.some(t => t.createdBy !== userId)) {
+        throw new HttpErrors.Forbidden(
+          'Managers can only delete tasks they created.',
+        );
+      }
+    }
 
     // Delete assignments first
     await this.taskAssignmentRepository.deleteAll({taskId: {inq: ids}});
@@ -466,7 +477,6 @@ export class TaskController {
     await this.taskRepository.replaceById(id, task);
     await this.auditService.log('Task', id, 'UPDATE', userId, task);
   }
-
   @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
   @del('/tasks/{id}')
   @response(204, {description: 'Task DELETE success'})
@@ -474,8 +484,16 @@ export class TaskController {
     const userId = parseInt(this.user[securityId]);
     const userRole = this.user.role;
 
-    if (userRole !== 'POWER_USER') {
-      throw new HttpErrors.Forbidden('Only Admins can delete tasks.');
+    const task = await this.taskRepository.findById(id);
+
+    if (userRole === UserRole.CONTRIBUTOR && task.createdBy !== userId) {
+      throw new HttpErrors.Forbidden(
+        'Managers can only delete tasks they created.',
+      );
+    }
+
+    if (userRole !== UserRole.POWER_USER && userRole !== UserRole.CONTRIBUTOR) {
+      throw new HttpErrors.Forbidden('Unauthorized to delete tasks.');
     }
 
     await this.taskRepository.deleteById(id);
