@@ -1,10 +1,5 @@
+import {UserRole} from '../config/permissions';
 import {Entity, model, property} from '@loopback/repository';
-
-export enum UserRole {
-  CONSUMER = 'CONSUMER',
-  CONTRIBUTOR = 'CONTRIBUTOR',
-  POWER_USER = 'POWER_USER',
-}
 
 @model({
   settings: {
