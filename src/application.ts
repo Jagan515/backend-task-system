@@ -18,7 +18,8 @@ import {ServiceMixin} from '@loopback/service-proxy';
 import path from 'path';
 import {DbDataSource} from './datasources';
 import {MySequence} from './sequence';
-import {AuditService, ReminderService} from './services';
+
+import {AuditService, ReminderService, MyJWTService} from './services';
 
 export {ApplicationConfig};
 
@@ -74,6 +75,11 @@ export class BackendApplication extends BootMixin(
     // Bind custom services
     this.bind('services.AuditService').toClass(AuditService);
     this.bind('services.ReminderService').toClass(ReminderService);
+
+    
+    // Bind custom JWT service to override default
+    this.bind(TokenServiceBindings.TOKEN_SERVICE).toClass(MyJWTService);
+
 
     // Bind datasource
     this.dataSource(DbDataSource, UserServiceBindings.DATASOURCE_NAME);

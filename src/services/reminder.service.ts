@@ -22,14 +22,14 @@ export class ReminderService implements LifeCycleObserver {
   ) {
     this.reminderQueue = new Queue('task-reminders', {
       redis: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
+        host: process.env.REDIS_HOST,
+        port: parseInt(process.env.REDIS_PORT!),
       },
     });
 
     this.transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'smtp.mailtrap.io',
-      port: parseInt(process.env.EMAIL_PORT || '2525'),
+      host: process.env.EMAIL_HOST,
+      port: parseInt(process.env.EMAIL_PORT!),
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
