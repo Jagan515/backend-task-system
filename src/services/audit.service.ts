@@ -13,14 +13,14 @@ export class AuditService {
     entityType: string,
     entityId: number,
     action: string,
-    performedBy: number,
+    performedBy: number | string,
     details?: object,
   ) {
     await this.auditLogRepository.create({
       entityType,
       entityId,
       action,
-      performedBy,
+      performedBy: typeof performedBy === 'string' ? parseInt(performedBy) : performedBy,
       details,
     });
   }

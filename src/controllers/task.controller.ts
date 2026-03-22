@@ -14,15 +14,17 @@ import {
   param,
   get,
   put,
+  patch,
   del,
   requestBody,
   response,
+  HttpErrors,
 } from '@loopback/rest';
 import {Task} from '../models';
 import {TaskRepository, TaskAssignmentRepository} from '../repositories';
 import {AuditService, ReminderService} from '../services';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';
-import {PERMISSIONS} from '../config/permissions';
+import {PERMISSIONS, UserRole} from '../config/permissions';
 
 @authenticate('jwt')
 export class TaskController {
@@ -66,12 +68,18 @@ export class TaskController {
     taskData: Omit<Task, 'id'> & {assignees?: number[]},
   ): Promise<Task> {
     const {assignees, ...taskFields} = taskData;
-    const userId = this.user[securityId];
+    const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
+
+    // Restriction: CONSUMER (User) cannot create tasks
+    if (userRole === 'CONSUMER') {
+      throw new HttpErrors.Forbidden('Users with CONSUMER role cannot create tasks.');
+    }
     
     // Create task
     const task = await this.taskRepository.create({
       ...taskFields,
-      createdBy: parseInt(userId),
+      createdBy: userId,
     });
 
     // Create assignments
@@ -84,7 +92,7 @@ export class TaskController {
       }
     }
 
-    await this.auditService.log('Task', task.id!, 'CREATE', parseInt(userId), {
+    await this.auditService.log('Task', task.id!, 'CREATE', userId, {
       title: task.title,
     });
 
@@ -106,6 +114,29 @@ export class TaskController {
   async find(
     @param.filter(Task) filter?: Filter<Task>,
   ): Promise<Task[]> {
+    const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
+
+    // Restriction: CONSUMER (User) can only see assigned tasks or tasks they created
+    if (userRole === 'CONSUMER') {
+      const assignments = await this.taskAssignmentRepository.find({
+        where: {userId: userId}
+      });
+      const assignedTaskIds = assignments.map(a => a.taskId);
+      
+      const userFilter: Filter<Task> = {
+        ...filter,
+        where: {
+          ...filter?.where,
+          or: [
+            {createdBy: userId},
+            {id: {inq: assignedTaskIds}}
+          ]
+        }
+      };
+      return this.taskRepository.find(userFilter);
+    }
+
     return this.taskRepository.find(filter);
   }
 
@@ -118,16 +149,262 @@ export class TaskController {
     return this.taskRepository.findById(id);
   }
 
+  @authorize({allowedRoles: [UserRole.CONSUMER, UserRole.CONTRIBUTOR, UserRole.POWER_USER]})
+  @patch('/tasks/{id}')
+  @response(204, {description: 'Task PATCH success'})
+  async updateById(
+    @param.path.number('id') id: number,
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              title: {type: 'string'},
+              description: {type: 'string'},
+              dueDate: {type: 'string', format: 'date-time'},
+              status: {type: 'string'},
+              priority: {type: 'string'},
+              assignees: {type: 'array', items: {type: 'number'}},
+              lastUpdatedAt: {type: 'string', format: 'date-time'},
+            },
+          },
+        },
+      },
+    })
+    taskData: Partial<Task> & {assignees?: number[], lastUpdatedAt?: string},
+  ): Promise<void> {
+    const {assignees, lastUpdatedAt, ...taskFields} = taskData;
+    const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
+    
+    const oldTask = await this.taskRepository.findById(id);
+
+    // Concurrency Check (Optimistic Locking)
+    if (lastUpdatedAt && oldTask.updatedAt) {
+      const incomingUpdate = new Date(lastUpdatedAt).getTime();
+      const existingUpdate = new Date(oldTask.updatedAt).getTime();
+      if (Math.abs(incomingUpdate - existingUpdate) > 1000) {
+        throw new HttpErrors.Conflict('This task has been modified by another user. Please refresh and try again.');
+      }
+    }
+
+    const assignments = await this.taskAssignmentRepository.find({where: {taskId: id}});
+    const isAssigned = assignments.some(a => a.userId === userId);
+    const isOwner = oldTask.createdBy === userId;
+
+    if (userRole === 'CONSUMER') {
+      if (!isAssigned && !isOwner) {
+        throw new HttpErrors.Forbidden('You are not authorized to update this task.');
+      }
+      // User can only update status
+      const allowedKeys = ['status'];
+      const attemptedKeys = Object.keys(taskFields);
+      if (attemptedKeys.some(k => !allowedKeys.includes(k)) || assignees !== undefined) {
+        throw new HttpErrors.Forbidden('Users with CONSUMER role can only update task status.');
+      }
+    } else if (userRole === 'CONTRIBUTOR') {
+      if (!isOwner) {
+        throw new HttpErrors.Forbidden('Managers can only update tasks they created.');
+      }
+    }
+
+    // Validation: Due date cannot be in the past (Requirement 4.2)
+    if (taskFields.dueDate) {
+      const dueDate = new Date(taskFields.dueDate);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (dueDate < now) {
+        throw new HttpErrors.BadRequest('Due date cannot be in the past.');
+      }
+    }
+
+    await this.taskRepository.updateById(id, {
+      ...taskFields,
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (assignees !== undefined) {
+      // Sync assignments
+      await this.taskAssignmentRepository.deleteAll({taskId: id});
+      for (const assigneeId of assignees) {
+        await this.taskAssignmentRepository.create({
+          taskId: id,
+          userId: assigneeId,
+        });
+      }
+    }
+
+    // Identify what changed for the audit log
+    const changes: any = {};
+    for (const key of Object.keys(taskFields) as Array<keyof Task>) {
+      if (taskFields[key] !== (oldTask as any)[key]) {
+        changes[key] = {
+          old: (oldTask as any)[key],
+          new: (taskFields as any)[key]
+        };
+      }
+    }
+
+    if (assignees !== undefined) {
+      changes.assignees = {new: assignees};
+    }
+
+    await this.auditService.log('Task', id, 'UPDATE', userId, changes);
+  }
+
+  @get('/tasks/{id}/assignees')
+  @response(200, {
+    description: 'List of assignees for a task',
+    content: {
+      'application/json': {
+        schema: {type: 'array', items: {type: 'number'}},
+      },
+    },
+  })
+  async findAssigneesByTaskId(
+    @param.path.number('id') id: number,
+  ): Promise<number[]> {
+    const assignments = await this.taskAssignmentRepository.find({where: {taskId: id}});
+    return assignments.map(a => a.userId);
+  }
+
   @authorize({allowedRoles: PERMISSIONS.UPDATE_TASK})
+  @patch('/tasks/bulk')
+  @response(200, {
+    description: 'Bulk update tasks',
+    content: {'application/json': {schema: {type: 'object'}}},
+  })
+  async bulkUpdate(
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['ids', 'data'],
+            properties: {
+              ids: {type: 'array', items: {type: 'number'}},
+              data: {
+                type: 'object',
+                properties: {
+                  status: {type: 'string'},
+                  priority: {type: 'string'},
+                  dueDate: {type: 'string', format: 'date-time'},
+                }
+              },
+            },
+          },
+        },
+      },
+    })
+    bulkData: {ids: number[], data: Partial<Task>},
+  ): Promise<{count: number}> {
+    const userId = parseInt(this.user[securityId]);
+    const {ids, data} = bulkData;
+    
+    const result = await this.taskRepository.updateAll(data, {
+      id: {inq: ids}
+    });
+
+    for (const id of ids) {
+      await this.auditService.log('Task', id, 'BULK_UPDATE', userId, data);
+    }
+
+    return result;
+  }
+
+  @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
+  @post('/tasks/bulk-delete')
+  @response(200, {
+    description: 'Bulk delete tasks',
+    content: {'application/json': {schema: {type: 'object'}}},
+  })
+  async bulkDelete(
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['ids'],
+            properties: {
+              ids: {type: 'array', items: {type: 'number'}},
+            },
+          },
+        },
+      },
+    })
+    bulkData: {ids: number[]},
+  ): Promise<{count: number}> {
+    const userId = parseInt(this.user[securityId]);
+    const {ids} = bulkData;
+    
+    // Delete assignments first
+    await this.taskAssignmentRepository.deleteAll({taskId: {inq: ids}});
+    
+    const result = await this.taskRepository.deleteAll({
+      id: {inq: ids}
+    });
+
+    for (const id of ids) {
+      await this.auditService.log('Task', id, 'BULK_DELETE', userId);
+    }
+
+    return result;
+  }
+
+  @authorize({allowedRoles: PERMISSIONS.UPDATE_TASK})
+  @patch('/tasks/bulk-assign')
+  @response(200, {
+    description: 'Bulk assign tasks to users',
+    content: {'application/json': {schema: {type: 'object'}}},
+  })
+  async bulkAssign(
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['ids', 'userIds'],
+            properties: {
+              ids: {type: 'array', items: {type: 'number'}},
+              userIds: {type: 'array', items: {type: 'number'}},
+            },
+          },
+        },
+      },
+    })
+    bulkData: {ids: number[], userIds: number[]},
+  ): Promise<{count: number}> {
+    const userId = parseInt(this.user[securityId]);
+    const {ids, userIds} = bulkData;
+
+    for (const taskId of ids) {
+      // Clear existing assignments for each task
+      await this.taskAssignmentRepository.deleteAll({taskId});
+      
+      // Add new assignments
+      for (const assigneeId of userIds) {
+        await this.taskAssignmentRepository.create({
+          taskId,
+          userId: assigneeId,
+        });
+      }
+      
+      await this.auditService.log('Task', taskId, 'BULK_ASSIGN', userId, {userIds});
+    }
+
+    return {count: ids.length};
+  }
+
   @put('/tasks/{id}')
   @response(204, {description: 'Task PUT success'})
   async replaceById(
     @param.path.number('id') id: number,
     @requestBody() task: Task,
   ): Promise<void> {
-    const userId = this.user[securityId];
+    const userId = parseInt(this.user[securityId]);
     await this.taskRepository.replaceById(id, task);
-    await this.auditService.log('Task', id, 'UPDATE', parseInt(userId), task);
+    await this.auditService.log('Task', id, 'UPDATE', userId, task);
   }
 
   @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
@@ -136,8 +413,14 @@ export class TaskController {
   async deleteById(
     @param.path.number('id') id: number,
   ): Promise<void> {
-    const userId = this.user[securityId];
+    const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
+
+    if (userRole !== 'POWER_USER') {
+      throw new HttpErrors.Forbidden('Only Admins can delete tasks.');
+    }
+
     await this.taskRepository.deleteById(id);
-    await this.auditService.log('Task', id, 'DELETE', parseInt(userId));
+    await this.auditService.log('Task', id, 'DELETE', userId);
   }
 }

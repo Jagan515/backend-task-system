@@ -1,17 +1,20 @@
 import {inject} from '@loopback/core';
 import {
   repository,
+  Filter,
 } from '@loopback/repository';
 import {
   post,
+  get,
+  param,
   requestBody,
   response,
   HttpErrors,
 } from '@loopback/rest';
 import {
   TokenServiceBindings,
-  UserServiceBindings,
 } from '@loopback/authentication-jwt';
+import {authenticate} from '@loopback/authentication';
 import {TokenService} from '@loopback/authentication';
 import {User, UserRole} from '../models';
 import {UserRepository} from '../repositories';
@@ -25,6 +28,26 @@ export class UserController {
     @inject(TokenServiceBindings.TOKEN_SERVICE)
     public jwtService: TokenService,
   ) {}
+
+  @authenticate('jwt')
+  @get('/users')
+  @response(200, {
+    description: 'Array of User model instances',
+    content: {
+      'application/json': {
+        schema: {type: 'array', items: {'x-ts-type': User}},
+      },
+    },
+  })
+  async find(
+    @param.filter(User) filter?: Filter<User>,
+  ): Promise<User[]> {
+    const users = await this.userRepository.find(filter);
+    return users.map(u => {
+      const {password, ...userWithoutPassword} = u;
+      return userWithoutPassword as User;
+    });
+  }
 
   @post('/signup')
   @response(200, {
@@ -41,6 +64,8 @@ export class UserController {
             properties: {
               email: {type: 'string'},
               password: {type: 'string'},
+              firstName: {type: 'string'},
+              lastName: {type: 'string'},
               role: {type: 'string', enum: Object.values(UserRole)},
             },
           },
@@ -49,12 +74,25 @@ export class UserController {
     })
     userData: Partial<User>,
   ): Promise<User> {
-    const password = await bcrypt.hash(userData.password!, 10);
+    const existingUser = await this.userRepository.findOne({
+      where: {email: userData.email},
+    });
+
+    if (existingUser) {
+      throw new HttpErrors.BadRequest('A user with this email already exists.');
+    }
+
+    if (!userData.password || userData.password.length < 6) {
+      throw new HttpErrors.BadRequest('Password must be at least 6 characters.');
+    }
+
+    const hashedPassword = await bcrypt.hash(userData.password, 10);
     const user = await this.userRepository.create({
       ...userData,
-      password,
+      password: hashedPassword,
     });
-    // @ts-ignore
+    
+    // @ts-expect-error
     delete user.password;
     return user;
   }
@@ -90,6 +128,10 @@ export class UserController {
     })
     credentials: Partial<User>,
   ): Promise<{token: string}> {
+    if (!credentials.email || !credentials.password) {
+      throw new HttpErrors.BadRequest('Email and password are required.');
+    }
+
     const user = await this.userRepository.findOne({
       where: {email: credentials.email},
     });
@@ -99,7 +141,7 @@ export class UserController {
     }
 
     const passwordMatched = await bcrypt.compare(
-      credentials.password!,
+      credentials.password,
       user.password,
     );
 
@@ -109,7 +151,8 @@ export class UserController {
 
     const userProfile: UserProfile = {
       [securityId]: user.id!.toString(),
-      name: user.email,
+      name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email,
+      email: user.email,
       role: user.role,
     };
 

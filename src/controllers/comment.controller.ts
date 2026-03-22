@@ -62,7 +62,7 @@ export class CommentController {
       userId: parseInt(userId),
     });
 
-    await this.auditService.log('Comment', comment.id!, 'CREATE', parseInt(userId), {
+    await this.auditService.log('Comment', comment.id!, 'CREATE', userId, {
       taskId,
       content: comment.content,
     });
