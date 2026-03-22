@@ -9,13 +9,15 @@ dotenv.config({path: path.join(__dirname, '../../.env')});
 const config = {
   name: 'db',
   connector: 'postgresql',
-  url: '',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  user: process.env.DB_USER || 'user',
-  password: process.env.DB_PASSWORD || 'password',
-  database: process.env.DB_NAME || 'task_system',
+  url: process.env.DATABASE_URL,
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
 };
+
+
 
 // Observe application lifecycle to disconnect from the datasource when
 // the application is stopped. This allows the application to shut down

@@ -51,6 +51,7 @@
   "dependencies": {
     "@loopback/authentication": "^12.0.12",
     "@loopback/authentication-jwt": "^0.16.12",
+    "@loopback/authorization": "^0.16.11",
     "@loopback/boot": "^8.0.11",
     "@loopback/core": "^7.0.10",
     "@loopback/repository": "^8.0.10",
@@ -60,9 +61,13 @@
     "bcryptjs": "^3.0.3",
     "bull": "^4.16.5",
     "dotenv": "^17.3.1",
+    "jsonwebtoken": "^9.0.3",
     "loopback-connector-postgresql": "^8.0.7",
     "nodemailer": "^8.0.3",
     "tslib": "^2.0.0"
+  },
+  "overrides": {
+    "uuid": "9.0.1"
   },
   "devDependencies": {
     "@loopback/build": "^12.0.10",
@@ -70,6 +75,7 @@
     "@loopback/testlab": "^8.0.10",
     "@types/bcryptjs": "^2.4.6",
     "@types/bull": "^3.15.9",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^16.18.126",
     "@types/nodemailer": "^7.0.11",
     "eslint": "^8.57.1",
