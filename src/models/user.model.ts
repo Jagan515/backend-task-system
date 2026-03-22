@@ -44,6 +44,12 @@ export class User extends Entity {
   role?: UserRole;
 
   @property({
+    type: 'boolean',
+    default: true,
+  })
+  isActive?: boolean;
+
+  @property({
     type: 'date',
     defaultFn: 'now',
   })

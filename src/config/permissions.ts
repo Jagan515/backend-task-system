@@ -13,6 +13,10 @@ export const PERMISSIONS = {
 
   // Audit Permissions
   VIEW_AUDIT_LOGS: [UserRole.CONTRIBUTOR, UserRole.POWER_USER],
+
+  // User Management Permissions
+  MANAGE_USERS: [UserRole.POWER_USER],
+
   // Comment Permissions
   CREATE_COMMENT: [
     UserRole.CONSUMER,
