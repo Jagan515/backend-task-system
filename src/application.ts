@@ -5,6 +5,7 @@ import {
   TokenServiceConstants,
   UserServiceBindings,
 } from '@loopback/authentication-jwt';
+import {AuthorizationComponent} from '@loopback/authorization';
 import {BootMixin} from '@loopback/boot';
 import {ApplicationConfig} from '@loopback/core';
 import {RepositoryMixin} from '@loopback/repository';
@@ -17,6 +18,7 @@ import {ServiceMixin} from '@loopback/service-proxy';
 import path from 'path';
 import {DbDataSource} from './datasources';
 import {MySequence} from './sequence';
+import {AuditService, ReminderService} from './services';
 
 export {ApplicationConfig};
 
@@ -49,10 +51,30 @@ export class BackendApplication extends BootMixin(
       },
     };
 
+    // Configure CORS
+    this.options.rest = {
+      ...this.options.rest,
+      cors: {
+        origin: '*',
+        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+        preflightContinue: false,
+        optionsSuccessStatus: 204,
+        maxAge: 86400,
+        credentials: true,
+      },
+    };
+
     // Mount authentication system
     this.component(AuthenticationComponent);
     // Mount jwt component
     this.component(JWTAuthenticationComponent);
+    // Mount authorization system
+    this.component(AuthorizationComponent);
+
+    // Bind custom services
+    this.bind('services.AuditService').toClass(AuditService);
+    this.bind('services.ReminderService').toClass(ReminderService);
+
     // Bind datasource
     this.dataSource(DbDataSource, UserServiceBindings.DATASOURCE_NAME);
 
