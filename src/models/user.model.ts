@@ -16,6 +16,12 @@ export class User extends Entity {
 
   @property({
     type: 'string',
+    index: {unique: true},
+  })
+  username?: string;
+
+  @property({
+    type: 'string',
     required: true,
     index: {unique: true},
   })
@@ -39,9 +45,21 @@ export class User extends Entity {
 
   @property({
     type: 'string',
-    default: UserRole.CONSUMER,
+    default: UserRole.USER,
   })
   role?: UserRole;
+
+  @property({
+    type: 'boolean',
+    default: true,
+  })
+  isActive?: boolean;
+
+  @property({
+    type: 'boolean',
+    default: false,
+  })
+  passwordResetRequired?: boolean;
 
   @property({
     type: 'date',

@@ -43,6 +43,9 @@ export class CommentController {
     })
     commentData: Pick<Comment, 'content'>,
   ): Promise<Comment> {
+    if (!commentData.content || commentData.content.trim() === '') {
+      throw new HttpErrors.BadRequest('Comment content cannot be empty.');
+    }
     const userId = this.user[securityId];
     const comment = await this.commentRepository.create({
       ...commentData,
@@ -56,6 +59,22 @@ export class CommentController {
     });
 
     return comment;
+  }
+
+  @del('/comments/{id}')
+  @response(204, {description: 'Comment DELETE success'})
+  async deleteById(@param.path.number('id') id: number): Promise<void> {
+    const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
+    const comment = await this.commentRepository.findById(id);
+
+    // Only Admin or the author can delete the comment
+    if (userRole !== UserRole.ADMIN && comment.userId !== userId) {
+      throw new HttpErrors.Forbidden('You can only delete your own comments.');
+    }
+
+    await this.commentRepository.deleteById(id);
+    await this.auditService.log('Comment', id, 'DELETE', userId);
   }
 
   @get('/tasks/{id}/comments')
