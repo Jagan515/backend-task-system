@@ -29,13 +29,20 @@ export class MyJWTService implements TokenService {
     try {
       // decode user profile from token
       const decodedToken = await verifyAsync(token, this.jwtSecret);
+      
+      // Normalize role for internal system use
+      let normalizedRole = decodedToken.role;
+      if (normalizedRole === 'CONTRIBUTOR') normalizedRole = 'MANAGER';
+      if (normalizedRole === 'POWER_USER') normalizedRole = 'ADMIN';
+      if (normalizedRole === 'CONSUMER') normalizedRole = 'USER';
+
       // don't copy over  token field 'iat' and 'exp', nor 'email' to user profile
       userProfile = Object.assign(
         {[securityId]: '', name: '', role: ''},
         {
           [securityId]: decodedToken.id,
           name: decodedToken.name,
-          role: decodedToken.role,
+          role: normalizedRole,
         },
       );
     } catch (error) {

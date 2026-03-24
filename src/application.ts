@@ -106,14 +106,18 @@ export class BackendApplication extends BootMixin(
     const userRole = user?.role;
     const allowedRoles = metadata.allowedRoles;
 
+    console.log(`[Authorizer] User Role: ${userRole}, Allowed Roles: ${JSON.stringify(allowedRoles)}`);
+
     if (!allowedRoles || allowedRoles.length === 0) {
       return AuthorizationDecision.ALLOW;
     }
 
     if (userRole && allowedRoles.includes(userRole)) {
+      console.log(`[Authorizer] Access ALLOWED`);
       return AuthorizationDecision.ALLOW;
     }
 
+    console.log(`[Authorizer] Access DENIED`);
     return AuthorizationDecision.DENY;
   }
 }

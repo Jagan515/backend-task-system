@@ -19,7 +19,7 @@ import {UserRole} from '../config/permissions';
 import {UserRepository} from '../repositories';
 import * as bcrypt from 'bcryptjs';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';
-import {AuditService} from '../services';
+import {AuditService, ReminderService} from '../services';
 
 export class UserController {
   constructor(
@@ -29,6 +29,8 @@ export class UserController {
     public jwtService: TokenService,
     @inject('services.AuditService')
     public auditService: AuditService,
+    @inject('services.ReminderService')
+    public reminderService: ReminderService,
     @inject(SecurityBindings.USER, {optional: true})
     public user: UserProfile,
   ) {}
@@ -43,7 +45,7 @@ export class UserController {
   }
 
   @authenticate('jwt')
-  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
+  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.USER]})
   @get('/users')
   @response(200, {
     description: 'Array of User model instances',
@@ -55,25 +57,41 @@ export class UserController {
   })
   async find(@param.filter(User) filter?: Filter<User>): Promise<User[]> {
     const userRole = this.user.role;
+    const userId = parseInt(this.user[securityId]);
     
     let combinedFilter = filter ?? {};
-    if (userRole === UserRole.MANAGER) {
+    const where = combinedFilter.where ?? {};
+
+    if (userRole === UserRole.ADMIN) {
+      // Admin can see everything
+      combinedFilter = {
+        ...combinedFilter,
+        where: { ...where }
+      };
+    } else if (userRole === UserRole.MANAGER) {
+      // Managers see only users they created
       combinedFilter = {
         ...combinedFilter,
         where: {
-          ...combinedFilter.where,
-          role: UserRole.USER,
-          isActive: {neq: false}
+          ...where,
+          createdBy: userId
         }
       };
-    } else {
-      combinedFilter = {
-        ...combinedFilter,
-        where: {
-          ...combinedFilter.where,
-          isActive: {neq: false}
-        }
-      };
+    } else if (userRole === UserRole.USER) {
+      // Users can see their fellow team members (same creator)
+      const currentUser = await this.userRepository.findById(userId);
+      if (currentUser.createdBy) {
+        combinedFilter = {
+          ...combinedFilter,
+          where: {
+            ...where,
+            createdBy: currentUser.createdBy
+          }
+        };
+      } else {
+        // Orphaned users see nobody
+        return [];
+      }
     }
 
     const users = await this.userRepository.find(combinedFilter);
@@ -101,7 +119,7 @@ export class UserController {
               password: {type: 'string'},
               firstName: {type: 'string'},
               lastName: {type: 'string'},
-              role: {type: 'string', enum: Object.values(UserRole)},
+              role: {type: 'string', enum: ['USER', 'MANAGER', 'ADMIN']},
             },
           },
         },
@@ -128,7 +146,7 @@ export class UserController {
       const user = await this.userRepository.create({
         ...userData,
         password: hashedPassword,
-        role: UserRole.ADMIN, // Force 'admin' role for public signups
+        role: UserRole.ADMIN, // Changed from USER to ADMIN for public signups
         username: this.generateRandomUsername(),
       });
 
@@ -202,14 +220,42 @@ export class UserController {
     const userProfile: UserProfile = {
       [securityId]: user.id!.toString(),
       name:
-        user.username || `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email,
+        (user.username ?? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()) || user.email,
       email: user.email,
-      role: user.role,
+      role: user.role ?? UserRole.USER,
       passwordResetRequired: user.passwordResetRequired,
     };
 
     const token = await this.jwtService.generateToken(userProfile);
     return {token};
+  }
+
+  @authenticate('jwt')
+  @get('/users/whoami')
+  @response(200, {
+    description: 'The current user profile',
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          properties: {
+            id: {type: 'string'},
+            email: {type: 'string'},
+            name: {type: 'string'},
+            role: {type: 'string'},
+          },
+        },
+      },
+    },
+  })
+  async whoAmI(): Promise<any> {
+    const userId = this.user[securityId];
+    return {
+      id: userId,
+      email: this.user.email,
+      name: this.user.name,
+      role: this.user.role,
+    };
   }
 
   @authenticate('jwt')
@@ -261,7 +307,8 @@ export class UserController {
               password: {type: 'string'},
               firstName: {type: 'string'},
               lastName: {type: 'string'},
-              role: {type: 'string', enum: Object.values(UserRole)},
+              username: {type: 'string'},
+              role: {type: 'string', enum: ['USER', 'MANAGER', 'ADMIN']},
             },
           },
         },
@@ -269,32 +316,49 @@ export class UserController {
     })
     userData: Partial<User>,
   ): Promise<User> {
-    const userRole = this.user.role;
-    
-    // Logic: Managers can only create 'user' role
-    if (userRole === UserRole.MANAGER && userData.role !== UserRole.USER) {
-      throw new HttpErrors.Forbidden('Managers can only create users with the "user" role.');
+    try {
+      const userRole = this.user.role;
+      const userId = parseInt(this.user[securityId]);
+      
+      // Logic: Managers can only create users with USER role
+      if (userRole === UserRole.MANAGER && userData.role !== UserRole.USER) {
+        throw new HttpErrors.Forbidden('Managers can only create users with the "USER" role.');
+      }
+
+      const existingUser = await this.userRepository.findOne({
+        where: {email: userData.email},
+      });
+
+      if (existingUser) {
+        throw new HttpErrors.BadRequest('A user with this email already exists.');
+      }
+
+      const hashedPassword = await bcrypt.hash(userData.password!, 10);
+      const user = await this.userRepository.create({
+        ...userData,
+        password: hashedPassword,
+        passwordResetRequired: true, // Force reset on first login
+        username: this.generateRandomUsername(),
+        createdBy: userId,
+      });
+
+      // Send welcome email with credentials
+      await this.reminderService.sendWelcomeEmail({
+        email: user.email,
+        firstName: user.firstName,
+        password: userData.password,
+      });
+
+      const result: Partial<User> = {...user};
+      delete result.password;
+      return result as User;
+    } catch (err) {
+      console.error('Create User Error:', err);
+      if (err.details) {
+        console.error('Validation details:', JSON.stringify(err.details, null, 2));
+      }
+      throw err;
     }
-
-    const existingUser = await this.userRepository.findOne({
-      where: {email: userData.email},
-    });
-
-    if (existingUser) {
-      throw new HttpErrors.BadRequest('A user with this email already exists.');
-    }
-
-    const hashedPassword = await bcrypt.hash(userData.password!, 10);
-    const user = await this.userRepository.create({
-      ...userData,
-      password: hashedPassword,
-      passwordResetRequired: true, // Force reset on first login
-      username: this.generateRandomUsername(),
-    });
-
-    const result: Partial<User> = {...user};
-    delete result.password;
-    return result as User;
   }
 
   @authenticate('jwt')
@@ -312,7 +376,7 @@ export class UserController {
               email: {type: 'string'},
               firstName: {type: 'string'},
               lastName: {type: 'string'},
-              role: {type: 'string', enum: Object.values(UserRole)},
+              role: {type: 'string', enum: ['USER', 'MANAGER', 'ADMIN']},
               isActive: {type: 'boolean'},
             },
           },
@@ -322,15 +386,32 @@ export class UserController {
     userData: Partial<User>,
   ): Promise<void> {
     const userRole = this.user.role;
+    const currentUserId = parseInt(this.user[securityId]);
     const targetUser = await this.userRepository.findById(id);
 
-    // Logic: Managers can only update 'user' role users
-    if (userRole === UserRole.MANAGER) {
-      if (targetUser.role !== UserRole.USER) {
-        throw new HttpErrors.Forbidden('Managers can only manage users with the "user" role.');
+    // Self-Protection: Users cannot deactivate their own account or change their own role
+    if (id === currentUserId) {
+      if (userData.role && userData.role !== targetUser.role) {
+        throw new HttpErrors.Forbidden('You cannot change your own role.');
       }
-      if (userData.role && userData.role !== UserRole.USER) {
-        throw new HttpErrors.Forbidden('Managers cannot promote users to Manager or Admin.');
+      if (userData.isActive !== undefined && userData.isActive !== targetUser.isActive) {
+        throw new HttpErrors.Forbidden('You cannot deactivate your own account.');
+      }
+    } else {
+      // Hierarchy Check
+      if (userRole === UserRole.MANAGER) {
+        // Manager can only update users they created
+        if (targetUser.createdBy !== currentUserId) {
+          throw new HttpErrors.Forbidden('Managers can only manage users they created.');
+        }
+        // Manager cannot promote to MANAGER or ADMIN
+        if (userData.role && userData.role !== UserRole.USER) {
+          throw new HttpErrors.Forbidden('Managers can only assign the USER role.');
+        }
+      } else if (userRole === UserRole.ADMIN) {
+        // Admin can manage anyone
+      } else {
+        throw new HttpErrors.Forbidden('Unauthorized to update users.');
       }
     }
 
@@ -346,11 +427,23 @@ export class UserController {
   @response(204, {description: 'User DELETE success'})
   async deleteById(@param.path.number('id') id: number): Promise<void> {
     const userRole = this.user.role;
+    const currentUserId = parseInt(this.user[securityId]);
     const targetUser = await this.userRepository.findById(id);
 
-    // Logic: Managers can only delete 'user' role users
-    if (userRole === UserRole.MANAGER && targetUser.role !== UserRole.USER) {
-      throw new HttpErrors.Forbidden('Managers can only delete users with the "user" role.');
+    // Self-Protection
+    if (id === currentUserId) {
+      throw new HttpErrors.Forbidden('You cannot delete your own account.');
+    }
+
+    // Hierarchy Check
+    if (userRole === UserRole.MANAGER) {
+      if (targetUser.createdBy !== currentUserId) {
+        throw new HttpErrors.Forbidden('Managers can only delete users they created.');
+      }
+    } else if (userRole === UserRole.ADMIN) {
+      // Admin can delete anyone
+    } else {
+      throw new HttpErrors.Forbidden('Unauthorized to delete users.');
     }
 
     await this.userRepository.deleteById(id);
