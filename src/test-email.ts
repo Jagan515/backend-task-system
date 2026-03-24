@@ -2,7 +2,7 @@ import * as nodemailer from 'nodemailer';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
-dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({path: path.join(__dirname, '../.env')});
 
 async function testEmail() {
   console.log('Testing email configuration...');
@@ -12,7 +12,7 @@ async function testEmail() {
 
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT || '465'),
+    port: parseInt(process.env.EMAIL_PORT ?? '465'),
     secure: process.env.EMAIL_PORT === '465', // true for 465, false for other ports
     auth: {
       user: process.env.EMAIL_USER,
@@ -34,4 +34,10 @@ async function testEmail() {
   }
 }
 
-testEmail();
+// You can top-level await in a module
+(async () => {
+  await testEmail();
+})().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

@@ -15,9 +15,5 @@ export const PERMISSIONS = {
 
   VIEW_AUDIT_LOGS: [UserRole.MANAGER, UserRole.ADMIN],
   // Comment Permissions
-  CREATE_COMMENT: [
-    UserRole.USER,
-    UserRole.MANAGER,
-    UserRole.ADMIN,
-  ],
+  CREATE_COMMENT: [UserRole.USER, UserRole.MANAGER, UserRole.ADMIN],
 };

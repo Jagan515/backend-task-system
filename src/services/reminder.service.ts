@@ -104,9 +104,11 @@ export class ReminderService implements LifeCycleObserver {
             from: '"Task Management System" <no-reply@tasksystem.com>',
             to: user.email,
             subject: `Reminder: ${task.title}`,
-            text: `Hi ${user.firstName || 'there'},\n\nJust a reminder for your task: ${task.title}\n\nDue Date: ${new Date(task.dueDate).toLocaleString()}\n\nDescription: ${task.description || 'No description provided.'}\n\nBest,\nTask Team`,
+            text: `Hi ${user.firstName ?? 'there'},\n\nJust a reminder for your task: ${task.title}\n\nDue Date: ${new Date(task.dueDate).toLocaleString()}\n\nDescription: ${task.description ?? 'No description provided.'}\n\nBest,\nTask Team`,
           });
-          console.log(`Reminder email sent to: ${user.email} for task: ${task.title}`);
+          console.log(
+            `Reminder email sent to: ${user.email} for task: ${task.title}`,
+          );
         } catch (error) {
           console.error(`Failed to send email to ${user.email}:`, error);
         }
@@ -114,14 +116,18 @@ export class ReminderService implements LifeCycleObserver {
     }
   }
 
-  async sendWelcomeEmail(user: {email: string; firstName?: string; password?: string}) {
+  async sendWelcomeEmail(user: {
+    email: string;
+    firstName?: string;
+    password?: string;
+  }) {
     try {
       await this.transporter.sendMail({
         from: '"Task Management System" <admin@tasksystem.com>',
         to: user.email,
         subject: 'Welcome to Task Management System',
         html: `
-          <h3>Welcome ${user.firstName || 'User'}!</h3>
+          <h3>Welcome ${user.firstName ?? 'User'}!</h3>
           <p>Your account has been created successfully.</p>
           <p><strong>Your Credentials:</strong></p>
           <ul>

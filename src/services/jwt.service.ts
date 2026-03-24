@@ -29,7 +29,7 @@ export class MyJWTService implements TokenService {
     try {
       // decode user profile from token
       const decodedToken = await verifyAsync(token, this.jwtSecret);
-      
+
       // Normalize role for internal system use
       let normalizedRole = decodedToken.role;
       if (normalizedRole === 'CONTRIBUTOR') normalizedRole = 'MANAGER';
