@@ -56,6 +56,7 @@ export class User extends Entity {
   isActive?: boolean;
 
   @property({
+
     type: 'boolean',
     default: false,
   })

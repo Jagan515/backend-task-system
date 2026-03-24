@@ -12,6 +12,7 @@ export const PERMISSIONS = {
   VIEW_TASKS: [UserRole.USER, UserRole.MANAGER, UserRole.ADMIN],
 
   // Audit Permissions
+
   VIEW_AUDIT_LOGS: [UserRole.MANAGER, UserRole.ADMIN],
   // Comment Permissions
   CREATE_COMMENT: [

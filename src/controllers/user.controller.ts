@@ -9,13 +9,15 @@ import {
   requestBody,
   response,
   HttpErrors,
+  patch,
+  del,
 } from '@loopback/rest';
 import {TokenServiceBindings} from '@loopback/authentication-jwt';
 import {authenticate} from '@loopback/authentication';
 import {authorize} from '@loopback/authorization';
 import {TokenService} from '@loopback/authentication';
 import {User} from '../models';
-import {UserRole} from '../config/permissions';
+import {UserRole, PERMISSIONS} from '../config/permissions';
 import {UserRepository} from '../repositories';
 import * as bcrypt from 'bcryptjs';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';
@@ -102,6 +104,91 @@ export class UserController {
     });
   }
 
+  @authenticate('jwt')
+  @authorize({allowedRoles: PERMISSIONS.MANAGE_USERS})
+  @post('/users')
+  @response(200, {
+    description: 'User created by Admin',
+    content: {'application/json': {schema: {'x-ts-type': User}}},
+  })
+  async create(
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['email', 'password', 'role'],
+            properties: {
+              email: {type: 'string'},
+              password: {type: 'string'},
+              firstName: {type: 'string'},
+              lastName: {type: 'string'},
+              role: {type: 'string', enum: Object.values(UserRole)},
+              isActive: {type: 'boolean'},
+            },
+          },
+        },
+      },
+    })
+    userData: Partial<User>,
+  ): Promise<User> {
+    const existingUser = await this.userRepository.findOne({
+      where: {email: userData.email},
+    });
+
+    if (existingUser) {
+      throw new HttpErrors.BadRequest('A user with this email already exists.');
+    }
+
+    const hashedPassword = await bcrypt.hash(userData.password!, 10);
+    const user = await this.userRepository.create({
+      ...userData,
+      password: hashedPassword,
+    });
+
+    // @ts-expect-error: password is removed before returning user
+    delete user.password;
+    return user;
+  }
+
+  @authenticate('jwt')
+  @authorize({allowedRoles: PERMISSIONS.MANAGE_USERS})
+  @patch('/users/{id}')
+  @response(204, {description: 'User update success'})
+  async updateById(
+    @param.path.number('id') id: number,
+    @requestBody({
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              firstName: {type: 'string'},
+              lastName: {type: 'string'},
+              role: {type: 'string', enum: Object.values(UserRole)},
+              isActive: {type: 'boolean'},
+              password: {type: 'string'},
+            },
+          },
+        },
+      },
+    })
+    userData: Partial<User>,
+  ): Promise<void> {
+    if (userData.password) {
+      userData.password = await bcrypt.hash(userData.password, 10);
+    }
+    await this.userRepository.updateById(id, userData);
+  }
+
+  @authenticate('jwt')
+  @authorize({allowedRoles: PERMISSIONS.MANAGE_USERS})
+  @del('/users/{id}')
+  @response(204, {description: 'User DELETE success'})
+  async deleteById(@param.path.number('id') id: number): Promise<void> {
+    await this.userRepository.deleteById(id);
+  }
+
   @post('/signup')
   @response(200, {
     description: 'User signup',
@@ -119,6 +206,7 @@ export class UserController {
               password: {type: 'string'},
               firstName: {type: 'string'},
               lastName: {type: 'string'},
+
               role: {type: 'string', enum: ['USER', 'MANAGER', 'ADMIN']},
             },
           },
@@ -142,13 +230,15 @@ export class UserController {
         );
       }
 
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
-      const user = await this.userRepository.create({
-        ...userData,
-        password: hashedPassword,
-        role: UserRole.ADMIN, // Changed from USER to ADMIN for public signups
-        username: this.generateRandomUsername(),
-      });
+
+    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    const user = await this.userRepository.create({
+      ...userData,
+      password: hashedPassword,
+      role: UserRole.CONSUMER, // Force default role
+      isActive: true,
+    });
+
 
       // Clean: Use spread and delete to avoid direct mutation of the created user object if needed, 
       // but LB4 creates are fresh objects. Still, cleaner to handle it explicitly.
@@ -205,7 +295,11 @@ export class UserController {
     }
 
     if (user.isActive === false) {
-      throw new HttpErrors.Unauthorized('Your account is deactivated. Please contact the administrator.');
+
+      throw new HttpErrors.Unauthorized(
+        'Your account has been deactivated. Please contact an Admin.',
+      );
+
     }
 
     const passwordMatched = await bcrypt.compare(

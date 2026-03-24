@@ -51,3 +51,7 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Tokens and local scripts
+token.txt
+mock_token.js
