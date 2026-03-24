@@ -64,11 +64,21 @@ export class TaskController {
     const userId = parseInt(this.user[securityId]);
     const userRole = this.user.role;
 
-    // Restriction: CONSUMER (User) cannot create tasks
-    if (userRole === 'CONSUMER') {
+    // Restriction: User (user) cannot create tasks
+    if (userRole === UserRole.USER) {
       throw new HttpErrors.Forbidden(
-        'Users with CONSUMER role cannot create tasks.',
+        'Users with user role cannot create tasks.',
       );
+    }
+
+    // Validation: Due date cannot be in the past
+    if (taskFields.dueDate) {
+      const dueDate = new Date(taskFields.dueDate);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (dueDate < now) {
+        throw new HttpErrors.BadRequest('Due date cannot be in the past.');
+      }
     }
 
     // Create task
@@ -113,8 +123,8 @@ export class TaskController {
     const userId = parseInt(this.user[securityId]);
     const userRole = this.user.role;
 
-    // Restriction: CONSUMER (User) can only see assigned tasks or tasks they created
-    if (userRole === 'CONSUMER') {
+    // Restriction: User (user) can only see assigned tasks or tasks they created
+    if (userRole === UserRole.USER) {
       const assignments = await this.taskAssignmentRepository.find({
         where: {userId: userId},
       });
@@ -144,9 +154,9 @@ export class TaskController {
 
   @authorize({
     allowedRoles: [
-      UserRole.CONSUMER,
-      UserRole.CONTRIBUTOR,
-      UserRole.POWER_USER,
+      UserRole.USER,
+      UserRole.MANAGER,
+      UserRole.ADMIN,
     ],
   })
   @patch('/tasks/{id}')
@@ -183,7 +193,8 @@ export class TaskController {
     if (lastUpdatedAt && oldTask.updatedAt) {
       const incomingUpdate = new Date(lastUpdatedAt).getTime();
       const existingUpdate = new Date(oldTask.updatedAt).getTime();
-      if (Math.abs(incomingUpdate - existingUpdate) > 1000) {
+      // Reduced tolerance to 10ms for more precise conflict detection
+      if (Math.abs(incomingUpdate - existingUpdate) > 10) {
         throw new HttpErrors.Conflict(
           'This task has been modified by another user. Please refresh and try again.',
         );
@@ -196,27 +207,30 @@ export class TaskController {
     const isAssigned = assignments.some(a => a.userId === userId);
     const isOwner = oldTask.createdBy === userId;
 
-    if (userRole === 'CONSUMER') {
+    // Check if only status is being updated
+    const attemptedKeys = Object.keys(taskFields);
+    const isOnlyStatusUpdate = attemptedKeys.length === 1 && attemptedKeys[0] === 'status' && assignees === undefined;
+
+    if (userRole === UserRole.ADMIN) {
+      // Admin can do anything
+    } else if (userRole === UserRole.MANAGER) {
+      // Managers can see all tasks, so allow status update on any task.
+      // But only allow full edit if they are the owner.
+      if (!isOwner && !isOnlyStatusUpdate) {
+        throw new HttpErrors.Forbidden(
+          'Managers can only update full task details for tasks they created. Only status can be updated for other tasks.',
+        );
+      }
+    } else if (userRole === UserRole.USER) {
       if (!isAssigned && !isOwner) {
         throw new HttpErrors.Forbidden(
           'You are not authorized to update this task.',
         );
       }
       // User can only update status
-      const allowedKeys = ['status'];
-      const attemptedKeys = Object.keys(taskFields);
-      if (
-        attemptedKeys.some(k => !allowedKeys.includes(k)) ||
-        assignees !== undefined
-      ) {
+      if (!isOnlyStatusUpdate) {
         throw new HttpErrors.Forbidden(
-          'Users with CONSUMER role can only update task status.',
-        );
-      }
-    } else if (userRole === 'CONTRIBUTOR') {
-      if (!isOwner) {
-        throw new HttpErrors.Forbidden(
-          'Managers can only update tasks they created.',
+          'Users with user role can only update task status.',
         );
       }
     }
@@ -335,7 +349,7 @@ export class TaskController {
     }
 
     // Role-based Ownership Check
-    if (userRole === UserRole.CONTRIBUTOR) {
+    if (userRole === UserRole.MANAGER) {
       const tasks = await this.taskRepository.find({where: {id: {inq: ids}}});
       if (tasks.some(t => t.createdBy !== userId)) {
         throw new HttpErrors.Forbidden(
@@ -384,7 +398,7 @@ export class TaskController {
     const {ids} = bulkData;
 
     // Role-based Ownership Check
-    if (userRole === UserRole.CONTRIBUTOR) {
+    if (userRole === UserRole.MANAGER) {
       const tasks = await this.taskRepository.find({where: {id: {inq: ids}}});
       if (tasks.some(t => t.createdBy !== userId)) {
         throw new HttpErrors.Forbidden(
@@ -438,7 +452,7 @@ export class TaskController {
     const {ids, userIds} = bulkData;
 
     // Role-based Ownership Check
-    if (userRole === UserRole.CONTRIBUTOR) {
+    if (userRole === UserRole.MANAGER) {
       const tasks = await this.taskRepository.find({where: {id: {inq: ids}}});
       if (tasks.some(t => t.createdBy !== userId)) {
         throw new HttpErrors.Forbidden(
@@ -467,15 +481,51 @@ export class TaskController {
     return {count: ids.length};
   }
 
+  @authorize({
+    allowedRoles: [
+      UserRole.MANAGER,
+      UserRole.ADMIN,
+    ],
+  })
   @put('/tasks/{id}')
   @response(204, {description: 'Task PUT success'})
   async replaceById(
     @param.path.number('id') id: number,
     @requestBody() task: Task,
   ): Promise<void> {
-    const userId = parseInt(this.user[securityId]);
-    await this.taskRepository.replaceById(id, task);
-    await this.auditService.log('Task', id, 'UPDATE', userId, task);
+    try {
+      const userId = parseInt(this.user[securityId]);
+      const userRole = this.user.role;
+      const oldTask = await this.taskRepository.findById(id);
+
+      // Ownership check for Managers
+      if (userRole === UserRole.MANAGER && oldTask.createdBy !== userId) {
+        throw new HttpErrors.Forbidden(
+          'Managers can only replace tasks they created.',
+        );
+      }
+      
+      // Validation: Due date cannot be in the past
+      if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        if (dueDate < now) {
+          throw new HttpErrors.BadRequest('Due date cannot be in the past.');
+        }
+      }
+
+      const updatedTask = {
+        ...task,
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.taskRepository.replaceById(id, updatedTask);
+      await this.auditService.log('Task', id, 'REPLACE', userId, updatedTask);
+    } catch (err) {
+      if (err instanceof HttpErrors.HttpError) throw err;
+      throw new HttpErrors.InternalServerError(`Failed to replace task: ${err.message}`);
+    }
   }
   @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
   @del('/tasks/{id}')
@@ -486,13 +536,13 @@ export class TaskController {
 
     const task = await this.taskRepository.findById(id);
 
-    if (userRole === UserRole.CONTRIBUTOR && task.createdBy !== userId) {
+    if (userRole === UserRole.MANAGER && task.createdBy !== userId) {
       throw new HttpErrors.Forbidden(
         'Managers can only delete tasks they created.',
       );
     }
 
-    if (userRole !== UserRole.POWER_USER && userRole !== UserRole.CONTRIBUTOR) {
+    if (userRole !== UserRole.ADMIN && userRole !== UserRole.MANAGER) {
       throw new HttpErrors.Forbidden('Unauthorized to delete tasks.');
     }
 

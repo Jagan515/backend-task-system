@@ -5,7 +5,7 @@ import {
   TokenServiceConstants,
   UserServiceBindings,
 } from '@loopback/authentication-jwt';
-import {AuthorizationComponent} from '@loopback/authorization';
+import {AuthorizationComponent, AuthorizationDecision, AuthorizationContext, AuthorizationMetadata, AuthorizationTags} from '@loopback/authorization';
 import {BootMixin} from '@loopback/boot';
 import {ApplicationConfig} from '@loopback/core';
 import {RepositoryMixin} from '@loopback/repository';
@@ -72,6 +72,11 @@ export class BackendApplication extends BootMixin(
     // Mount authorization system
     this.component(AuthorizationComponent);
 
+    // Register a basic authorizer
+    this.bind('authorizationProviders.basic')
+      .to(this.basicAuthorizer.bind(this))
+      .tag(AuthorizationTags.AUTHORIZER);
+
     // Bind custom services
     this.bind('services.AuditService').toClass(AuditService);
     this.bind('services.ReminderService').toClass(ReminderService);
@@ -90,5 +95,29 @@ export class BackendApplication extends BootMixin(
       process.env.JWT_EXPIRES_IN ??
         TokenServiceConstants.TOKEN_EXPIRES_IN_VALUE,
     );
+  }
+
+  // Basic RBAC Authorizer
+  async basicAuthorizer(
+    context: AuthorizationContext,
+    metadata: AuthorizationMetadata,
+  ): Promise<AuthorizationDecision> {
+    const user = context.principals[0];
+    const userRole = user?.role;
+    const allowedRoles = metadata.allowedRoles;
+
+    console.log(`[Authorizer] User Role: ${userRole}, Allowed Roles: ${JSON.stringify(allowedRoles)}`);
+
+    if (!allowedRoles || allowedRoles.length === 0) {
+      return AuthorizationDecision.ALLOW;
+    }
+
+    if (userRole && allowedRoles.includes(userRole)) {
+      console.log(`[Authorizer] Access ALLOWED`);
+      return AuthorizationDecision.ALLOW;
+    }
+
+    console.log(`[Authorizer] Access DENIED`);
+    return AuthorizationDecision.DENY;
   }
 }

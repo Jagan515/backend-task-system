@@ -2,12 +2,20 @@ import {authenticate} from '@loopback/authentication';
 import {authorize} from '@loopback/authorization';
 import {inject} from '@loopback/core';
 import {repository} from '@loopback/repository';
-import {post, param, get, requestBody, response} from '@loopback/rest';
+import {
+  post,
+  param,
+  get,
+  requestBody,
+  response,
+  HttpErrors,
+  del,
+} from '@loopback/rest';
 import {Comment} from '../models';
 import {CommentRepository} from '../repositories';
 import {securityId, UserProfile, SecurityBindings} from '@loopback/security';
 import {AuditService} from '../services';
-import {PERMISSIONS} from '../config/permissions';
+import {PERMISSIONS, UserRole} from '../config/permissions';
 
 @authenticate('jwt')
 export class CommentController {
@@ -43,6 +51,9 @@ export class CommentController {
     })
     commentData: Pick<Comment, 'content'>,
   ): Promise<Comment> {
+    if (!commentData.content || commentData.content.trim() === '') {
+      throw new HttpErrors.BadRequest('Comment content cannot be empty.');
+    }
     const userId = this.user[securityId];
     const comment = await this.commentRepository.create({
       ...commentData,
@@ -56,6 +67,22 @@ export class CommentController {
     });
 
     return comment;
+  }
+
+  @del('/comments/{id}')
+  @response(204, {description: 'Comment DELETE success'})
+  async deleteById(@param.path.number('id') id: number): Promise<void> {
+    const userId = parseInt(this.user[securityId]);
+    const userRole = this.user.role;
+    const comment = await this.commentRepository.findById(id);
+
+    // Only Admin or the author can delete the comment
+    if (userRole !== UserRole.ADMIN && comment.userId !== userId) {
+      throw new HttpErrors.Forbidden('You can only delete your own comments.');
+    }
+
+    await this.commentRepository.deleteById(id);
+    await this.auditService.log('Comment', id, 'DELETE', userId);
   }
 
   @get('/tasks/{id}/comments')
