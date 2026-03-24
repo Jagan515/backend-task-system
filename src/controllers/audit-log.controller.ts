@@ -4,7 +4,11 @@ import {inject} from '@loopback/core';
 import {repository, Filter} from '@loopback/repository';
 import {param, get, response, HttpErrors} from '@loopback/rest';
 import {AuditLog} from '../models';
-import {AuditLogRepository, TaskRepository, TaskAssignmentRepository} from '../repositories';
+import {
+  AuditLogRepository,
+  TaskRepository,
+  TaskAssignmentRepository,
+} from '../repositories';
 import {PERMISSIONS, UserRole} from '../config/permissions';
 import {SecurityBindings, UserProfile, securityId} from '@loopback/security';
 
@@ -69,16 +73,18 @@ export class AuditLogController {
 
       // Check if user has access to this task
       const task = await this.taskRepository.findById(id);
-      
+
       if (userRole === UserRole.USER) {
         const assignments = await this.taskAssignmentRepository.find({
-          where: {taskId: id, userId: userId}
+          where: {taskId: id, userId: userId},
         });
         const isAssigned = assignments.length > 0;
         const isOwner = task.createdBy === userId;
 
         if (!isAssigned && !isOwner) {
-          throw new HttpErrors.Forbidden('You do not have access to this task history.');
+          throw new HttpErrors.Forbidden(
+            'You do not have access to this task history.',
+          );
         }
       }
 
@@ -89,7 +95,9 @@ export class AuditLogController {
       });
     } catch (err) {
       if (err instanceof HttpErrors.HttpError) throw err;
-      throw new HttpErrors.InternalServerError(`Failed to retrieve task history: ${err.message}`);
+      throw new HttpErrors.InternalServerError(
+        `Failed to retrieve task history: ${err.message}`,
+      );
     }
   }
 }

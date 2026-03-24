@@ -5,7 +5,13 @@ import {
   TokenServiceConstants,
   UserServiceBindings,
 } from '@loopback/authentication-jwt';
-import {AuthorizationComponent, AuthorizationDecision, AuthorizationContext, AuthorizationMetadata, AuthorizationTags} from '@loopback/authorization';
+import {
+  AuthorizationComponent,
+  AuthorizationDecision,
+  AuthorizationContext,
+  AuthorizationMetadata,
+  AuthorizationTags,
+} from '@loopback/authorization';
 import {BootMixin} from '@loopback/boot';
 import {ApplicationConfig} from '@loopback/core';
 import {RepositoryMixin} from '@loopback/repository';
@@ -106,7 +112,9 @@ export class BackendApplication extends BootMixin(
     const userRole = user?.role;
     const allowedRoles = metadata.allowedRoles;
 
-    console.log(`[Authorizer] User Role: ${userRole}, Allowed Roles: ${JSON.stringify(allowedRoles)}`);
+    console.log(
+      `[Authorizer] User Role: ${userRole}, Allowed Roles: ${JSON.stringify(allowedRoles)}`,
+    );
 
     if (!allowedRoles || allowedRoles.length === 0) {
       return AuthorizationDecision.ALLOW;

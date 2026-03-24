@@ -9,8 +9,6 @@ import {
   requestBody,
   response,
   HttpErrors,
-  patch,
-  del,
 } from '@loopback/rest';
 import {TokenServiceBindings} from '@loopback/authentication-jwt';
 import {authenticate} from '@loopback/authentication';
@@ -38,8 +36,26 @@ export class UserController {
   ) {}
 
   private generateRandomUsername(): string {
-    const adjectives = ['Swift', 'Brave', 'Quiet', 'Valiant', 'Agile', 'Bright', 'Golden', 'Misty'];
-    const animals = ['Fox', 'Eagle', 'Wolf', 'Panther', 'Lion', 'Hawk', 'Dolphin', 'Tiger'];
+    const adjectives = [
+      'Swift',
+      'Brave',
+      'Quiet',
+      'Valiant',
+      'Agile',
+      'Bright',
+      'Golden',
+      'Misty',
+    ];
+    const animals = [
+      'Fox',
+      'Eagle',
+      'Wolf',
+      'Panther',
+      'Lion',
+      'Hawk',
+      'Dolphin',
+      'Tiger',
+    ];
     const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
     const anim = animals[Math.floor(Math.random() * animals.length)];
     const num = Math.floor(10 + Math.random() * 900);
@@ -60,7 +76,7 @@ export class UserController {
   async find(@param.filter(User) filter?: Filter<User>): Promise<User[]> {
     const userRole = this.user.role;
     const userId = parseInt(this.user[securityId]);
-    
+
     let combinedFilter = filter ?? {};
     const where = combinedFilter.where ?? {};
 
@@ -68,7 +84,7 @@ export class UserController {
       // Admin can see everything
       combinedFilter = {
         ...combinedFilter,
-        where: { ...where }
+        where: {...where},
       };
     } else if (userRole === UserRole.MANAGER) {
       // Managers see only users they created
@@ -76,8 +92,8 @@ export class UserController {
         ...combinedFilter,
         where: {
           ...where,
-          createdBy: userId
-        }
+          createdBy: userId,
+        },
       };
     } else if (userRole === UserRole.USER) {
       // Users can see their fellow team members (same creator)
@@ -87,8 +103,8 @@ export class UserController {
           ...combinedFilter,
           where: {
             ...where,
-            createdBy: currentUser.createdBy
-          }
+            createdBy: currentUser.createdBy,
+          },
         };
       } else {
         // Orphaned users see nobody
@@ -105,7 +121,7 @@ export class UserController {
   }
 
   @authenticate('jwt')
-  @authorize({allowedRoles: PERMISSIONS.MANAGE_USERS})
+  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
   @post('/users')
   @response(200, {
     description: 'User created by Admin',
@@ -152,7 +168,7 @@ export class UserController {
   }
 
   @authenticate('jwt')
-  @authorize({allowedRoles: PERMISSIONS.MANAGE_USERS})
+  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
   @patch('/users/{id}')
   @response(204, {description: 'User update success'})
   async updateById(
@@ -182,7 +198,7 @@ export class UserController {
   }
 
   @authenticate('jwt')
-  @authorize({allowedRoles: PERMISSIONS.MANAGE_USERS})
+  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
   @del('/users/{id}')
   @response(204, {description: 'User DELETE success'})
   async deleteById(@param.path.number('id') id: number): Promise<void> {
@@ -221,7 +237,9 @@ export class UserController {
       });
 
       if (existingUser) {
-        throw new HttpErrors.BadRequest('A user with this email already exists.');
+        throw new HttpErrors.BadRequest(
+          'A user with this email already exists.',
+        );
       }
 
       if (!userData.password || userData.password.length < 6) {
@@ -230,17 +248,15 @@ export class UserController {
         );
       }
 
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const user = await this.userRepository.create({
+        ...userData,
+        password: hashedPassword,
+        role: UserRole.USER, // Force default role
+        isActive: true,
+      });
 
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
-    const user = await this.userRepository.create({
-      ...userData,
-      password: hashedPassword,
-      role: UserRole.CONSUMER, // Force default role
-      isActive: true,
-    });
-
-
-      // Clean: Use spread and delete to avoid direct mutation of the created user object if needed, 
+      // Clean: Use spread and delete to avoid direct mutation of the created user object if needed,
       // but LB4 creates are fresh objects. Still, cleaner to handle it explicitly.
       const result: Partial<User> = {...user};
       delete result.password;
@@ -295,11 +311,9 @@ export class UserController {
     }
 
     if (user.isActive === false) {
-
       throw new HttpErrors.Unauthorized(
         'Your account has been deactivated. Please contact an Admin.',
       );
-
     }
 
     const passwordMatched = await bcrypt.compare(
@@ -314,7 +328,9 @@ export class UserController {
     const userProfile: UserProfile = {
       [securityId]: user.id!.toString(),
       name:
-        (user.username ?? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()) || user.email,
+        (user.username ??
+          `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()) ||
+        user.email,
       email: user.email,
       role: user.role ?? UserRole.USER,
       passwordResetRequired: user.passwordResetRequired,
@@ -342,14 +358,20 @@ export class UserController {
       },
     },
   })
-  async whoAmI(): Promise<any> {
+  async whoAmI(): Promise<Partial<User>> {
     const userId = this.user[securityId];
-    return {
-      id: userId,
-      email: this.user.email,
-      name: this.user.name,
-      role: this.user.role,
-    };
+    const user = await this.userRepository.findById(parseInt(userId, 10), {
+      fields: {
+        id: true,
+        email: true,
+        role: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        passwordResetRequired: true,
+      },
+    });
+    return user;
   }
 
   @authenticate('jwt')
@@ -369,177 +391,23 @@ export class UserController {
         },
       },
     })
-    payload: {newPassword: string},
+    payload: {
+      newPassword: string;
+    },
   ): Promise<void> {
     const userId = this.user[securityId];
     const hashedPassword = await bcrypt.hash(payload.newPassword, 10);
-    
+
     await this.userRepository.updateById(parseInt(userId), {
       password: hashedPassword,
       passwordResetRequired: false, // Reset the flag
     });
 
-    await this.auditService.log('User', parseInt(userId), 'PASSWORD_CHANGE', userId);
-  }
-
-  @authenticate('jwt')
-  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
-  @post('/users')
-  @response(200, {
-    description: 'User model instance',
-    content: {'application/json': {schema: {'x-ts-type': User}}},
-  })
-  async create(
-    @requestBody({
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            required: ['email', 'password', 'role'],
-            properties: {
-              email: {type: 'string'},
-              password: {type: 'string'},
-              firstName: {type: 'string'},
-              lastName: {type: 'string'},
-              username: {type: 'string'},
-              role: {type: 'string', enum: ['USER', 'MANAGER', 'ADMIN']},
-            },
-          },
-        },
-      },
-    })
-    userData: Partial<User>,
-  ): Promise<User> {
-    try {
-      const userRole = this.user.role;
-      const userId = parseInt(this.user[securityId]);
-      
-      // Logic: Managers can only create users with USER role
-      if (userRole === UserRole.MANAGER && userData.role !== UserRole.USER) {
-        throw new HttpErrors.Forbidden('Managers can only create users with the "USER" role.');
-      }
-
-      const existingUser = await this.userRepository.findOne({
-        where: {email: userData.email},
-      });
-
-      if (existingUser) {
-        throw new HttpErrors.BadRequest('A user with this email already exists.');
-      }
-
-      const hashedPassword = await bcrypt.hash(userData.password!, 10);
-      const user = await this.userRepository.create({
-        ...userData,
-        password: hashedPassword,
-        passwordResetRequired: true, // Force reset on first login
-        username: this.generateRandomUsername(),
-        createdBy: userId,
-      });
-
-      // Send welcome email with credentials
-      await this.reminderService.sendWelcomeEmail({
-        email: user.email,
-        firstName: user.firstName,
-        password: userData.password,
-      });
-
-      const result: Partial<User> = {...user};
-      delete result.password;
-      return result as User;
-    } catch (err) {
-      console.error('Create User Error:', err);
-      if (err.details) {
-        console.error('Validation details:', JSON.stringify(err.details, null, 2));
-      }
-      throw err;
-    }
-  }
-
-  @authenticate('jwt')
-  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
-  @patch('/users/{id}')
-  @response(204, {description: 'User PATCH success'})
-  async updateById(
-    @param.path.number('id') id: number,
-    @requestBody({
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            properties: {
-              email: {type: 'string'},
-              firstName: {type: 'string'},
-              lastName: {type: 'string'},
-              role: {type: 'string', enum: ['USER', 'MANAGER', 'ADMIN']},
-              isActive: {type: 'boolean'},
-            },
-          },
-        },
-      },
-    })
-    userData: Partial<User>,
-  ): Promise<void> {
-    const userRole = this.user.role;
-    const currentUserId = parseInt(this.user[securityId]);
-    const targetUser = await this.userRepository.findById(id);
-
-    // Self-Protection: Users cannot deactivate their own account or change their own role
-    if (id === currentUserId) {
-      if (userData.role && userData.role !== targetUser.role) {
-        throw new HttpErrors.Forbidden('You cannot change your own role.');
-      }
-      if (userData.isActive !== undefined && userData.isActive !== targetUser.isActive) {
-        throw new HttpErrors.Forbidden('You cannot deactivate your own account.');
-      }
-    } else {
-      // Hierarchy Check
-      if (userRole === UserRole.MANAGER) {
-        // Manager can only update users they created
-        if (targetUser.createdBy !== currentUserId) {
-          throw new HttpErrors.Forbidden('Managers can only manage users they created.');
-        }
-        // Manager cannot promote to MANAGER or ADMIN
-        if (userData.role && userData.role !== UserRole.USER) {
-          throw new HttpErrors.Forbidden('Managers can only assign the USER role.');
-        }
-      } else if (userRole === UserRole.ADMIN) {
-        // Admin can manage anyone
-      } else {
-        throw new HttpErrors.Forbidden('Unauthorized to update users.');
-      }
-    }
-
-    if (userData.password) {
-      userData.password = await bcrypt.hash(userData.password, 10);
-    }
-    await this.userRepository.updateById(id, userData);
-  }
-
-  @authenticate('jwt')
-  @authorize({allowedRoles: [UserRole.ADMIN, UserRole.MANAGER]})
-  @del('/users/{id}')
-  @response(204, {description: 'User DELETE success'})
-  async deleteById(@param.path.number('id') id: number): Promise<void> {
-    const userRole = this.user.role;
-    const currentUserId = parseInt(this.user[securityId]);
-    const targetUser = await this.userRepository.findById(id);
-
-    // Self-Protection
-    if (id === currentUserId) {
-      throw new HttpErrors.Forbidden('You cannot delete your own account.');
-    }
-
-    // Hierarchy Check
-    if (userRole === UserRole.MANAGER) {
-      if (targetUser.createdBy !== currentUserId) {
-        throw new HttpErrors.Forbidden('Managers can only delete users they created.');
-      }
-    } else if (userRole === UserRole.ADMIN) {
-      // Admin can delete anyone
-    } else {
-      throw new HttpErrors.Forbidden('Unauthorized to delete users.');
-    }
-
-    await this.userRepository.deleteById(id);
+    await this.auditService.log(
+      'User',
+      parseInt(userId),
+      'PASSWORD_CHANGE',
+      userId,
+    );
   }
 }

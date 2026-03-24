@@ -153,11 +153,7 @@ export class TaskController {
   }
 
   @authorize({
-    allowedRoles: [
-      UserRole.USER,
-      UserRole.MANAGER,
-      UserRole.ADMIN,
-    ],
+    allowedRoles: [UserRole.USER, UserRole.MANAGER, UserRole.ADMIN],
   })
   @patch('/tasks/{id}')
   @response(204, {description: 'Task PATCH success'})
@@ -209,7 +205,10 @@ export class TaskController {
 
     // Check if only status is being updated
     const attemptedKeys = Object.keys(taskFields);
-    const isOnlyStatusUpdate = attemptedKeys.length === 1 && attemptedKeys[0] === 'status' && assignees === undefined;
+    const isOnlyStatusUpdate =
+      attemptedKeys.length === 1 &&
+      attemptedKeys[0] === 'status' &&
+      assignees === undefined;
 
     if (userRole === UserRole.ADMIN) {
       // Admin can do anything
@@ -482,10 +481,7 @@ export class TaskController {
   }
 
   @authorize({
-    allowedRoles: [
-      UserRole.MANAGER,
-      UserRole.ADMIN,
-    ],
+    allowedRoles: [UserRole.MANAGER, UserRole.ADMIN],
   })
   @put('/tasks/{id}')
   @response(204, {description: 'Task PUT success'})
@@ -504,7 +500,7 @@ export class TaskController {
           'Managers can only replace tasks they created.',
         );
       }
-      
+
       // Validation: Due date cannot be in the past
       if (task.dueDate) {
         const dueDate = new Date(task.dueDate);
@@ -517,14 +513,16 @@ export class TaskController {
 
       const updatedTask = {
         ...task,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
 
       await this.taskRepository.replaceById(id, updatedTask);
       await this.auditService.log('Task', id, 'REPLACE', userId, updatedTask);
     } catch (err) {
       if (err instanceof HttpErrors.HttpError) throw err;
-      throw new HttpErrors.InternalServerError(`Failed to replace task: ${err.message}`);
+      throw new HttpErrors.InternalServerError(
+        `Failed to replace task: ${err.message}`,
+      );
     }
   }
   @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
