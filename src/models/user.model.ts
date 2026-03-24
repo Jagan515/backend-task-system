@@ -62,6 +62,11 @@ export class User extends Entity {
   passwordResetRequired?: boolean;
 
   @property({
+    type: 'number',
+  })
+  createdBy?: number;
+
+  @property({
     type: 'date',
     defaultFn: 'now',
   })

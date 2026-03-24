@@ -1,7 +1,7 @@
 export enum UserRole {
-  USER = 'user',
-  MANAGER = 'manager',
-  ADMIN = 'admin',
+  USER = 'USER',
+  MANAGER = 'MANAGER',
+  ADMIN = 'ADMIN',
 }
 
 export const PERMISSIONS = {

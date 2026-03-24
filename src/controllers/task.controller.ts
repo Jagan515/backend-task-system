@@ -193,7 +193,8 @@ export class TaskController {
     if (lastUpdatedAt && oldTask.updatedAt) {
       const incomingUpdate = new Date(lastUpdatedAt).getTime();
       const existingUpdate = new Date(oldTask.updatedAt).getTime();
-      if (Math.abs(incomingUpdate - existingUpdate) > 1000) {
+      // Reduced tolerance to 10ms for more precise conflict detection
+      if (Math.abs(incomingUpdate - existingUpdate) > 10) {
         throw new HttpErrors.Conflict(
           'This task has been modified by another user. Please refresh and try again.',
         );
@@ -480,26 +481,51 @@ export class TaskController {
     return {count: ids.length};
   }
 
+  @authorize({
+    allowedRoles: [
+      UserRole.MANAGER,
+      UserRole.ADMIN,
+    ],
+  })
   @put('/tasks/{id}')
   @response(204, {description: 'Task PUT success'})
   async replaceById(
     @param.path.number('id') id: number,
     @requestBody() task: Task,
   ): Promise<void> {
-    const userId = parseInt(this.user[securityId]);
-    
-    // Validation: Due date cannot be in the past
-    if (task.dueDate) {
-      const dueDate = new Date(task.dueDate);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      if (dueDate < now) {
-        throw new HttpErrors.BadRequest('Due date cannot be in the past.');
-      }
-    }
+    try {
+      const userId = parseInt(this.user[securityId]);
+      const userRole = this.user.role;
+      const oldTask = await this.taskRepository.findById(id);
 
-    await this.taskRepository.replaceById(id, task);
-    await this.auditService.log('Task', id, 'UPDATE', userId, task);
+      // Ownership check for Managers
+      if (userRole === UserRole.MANAGER && oldTask.createdBy !== userId) {
+        throw new HttpErrors.Forbidden(
+          'Managers can only replace tasks they created.',
+        );
+      }
+      
+      // Validation: Due date cannot be in the past
+      if (task.dueDate) {
+        const dueDate = new Date(task.dueDate);
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        if (dueDate < now) {
+          throw new HttpErrors.BadRequest('Due date cannot be in the past.');
+        }
+      }
+
+      const updatedTask = {
+        ...task,
+        updatedAt: new Date().toISOString()
+      };
+
+      await this.taskRepository.replaceById(id, updatedTask);
+      await this.auditService.log('Task', id, 'REPLACE', userId, updatedTask);
+    } catch (err) {
+      if (err instanceof HttpErrors.HttpError) throw err;
+      throw new HttpErrors.InternalServerError(`Failed to replace task: ${err.message}`);
+    }
   }
   @authorize({allowedRoles: PERMISSIONS.DELETE_TASK})
   @del('/tasks/{id}')
